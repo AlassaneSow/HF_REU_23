@@ -18,10 +18,6 @@ raw_data <- rename( raw_data,"CO2_ppm" = V4)
 raw_data <- rename( raw_data,"H2O_mmol" = V5)
 raw_data$datetime <- as.POSIXct(raw_data$datetime, format="%Y-%m-%d %H:%M:%S") #correctly formats date-time
 
-#join the average heights data frame with the respiratiom df. Make sure they each have the same column name
-raw_data <- left_join(raw_data, heights, by = "chamber")
-
-
 data <- raw_data %>%    #this rounds the datetime to an hour or half an hour and fixes formatting for chamber column               
   mutate(half_hour = as.factor(lubridate::floor_date(raw_data$datetime, "30 min")))
 data = data %>%
@@ -42,21 +38,24 @@ dat_fix <- parse_ymd_hms(dat$datetime)
 #get rid of problematic rows 
 data <- data[-c(1:4)]
 
-#now that the format is fixed we can group measurements by chamber and the half hour they were recorded in. 
+#now that the format is fixed we can group measurements by chamber and the half hour they were recorded in. Then model respiration for each five minute measurment.  
 fittedmodels <-  data %>% 
   nest_by(half_hour,chamber) %>%
   mutate(model = list(lm(CO2_ppm ~ time_seconds, data = data))) %>%
   reframe(tidy(model)) %>%
-  filter(term=="time_seconds")
+  filter(term =="time_seconds")
+
+#join the average heights data frame with the fitted models df. Make sure they each have the same column name
+fittedmodels <- left_join(fittedmodels, heights, by = "chamber")
  
-fitted_models <- fitted_models |> #lid vol+system vol + collar volume in cm3 then converted to L by divinding by 1000 
+fitted_models <- fittedmodels |> #lid vol+system vol + collar volume in cm3 then converted to L by divinding by 1000 
 mutate("system_vol" = (0.0646328*0.099 + 274.14 + pi*Average_Height*14.3^2 )/1000) |>  
 #estimated slope * system volume/surface area of collar and surface area of lid 
 mutate("flux" = 10000*(estimate *  system_vol/((2*pi*14.3*Average_Height+2*pi*14.3^2)+(2*pi*14.3*9.9+2*pi*14.3^2)))) |> 
 #filter fluxes with high p-values and any weird values
 filter(flux < 100, flux > 0, p.value < 0.005)  
   
-#make halfhour coloumn a datetime to so ggplot plots correctly 
+#make half_hour coloumn a datetime to so ggplot plots correctly 
 fitted_models$half_hour <-  as.POSIXct(fitted_models$half_hour, format="%Y-%m-%d %H:%M:%S") 
 
 #plot fluxes. 
@@ -74,6 +73,34 @@ chamber_six <- fitted_models %>%
   geom_point() +
   ylab(expression(Respiration~(µmol/m^2~s))) +
   xlab("Day")
+#Here is an example of how you can plot specific days to see daily fluxes.
+fitted_models %>% 
+  filter(half_hour <= "2023-06-26 08:00:00") %>%
+  ggplot(aes(x = half_hour, y = flux)) +
+  geom_point() +
+  ylab(expression(Respiration~(µmol/m^2~s))) +
+  xlab("Day")
+#this can be taken further and you can color by chamber
+fitted_models %>% 
+  filter(half_hour <= "2023-06-26 08:00:00") %>%
+  ggplot(aes(x = half_hour, y = flux, color = chamber)) +
+  geom_point() +
+  ylab(expression(Respiration~(µmol/m^2~s))) +
+  xlab("Day")
 
+#or plot only one chamber
+fitted_models %>% 
+  filter(half_hour <= "2023-06-26 08:00:00") %>%
+  filter(chamber == c("6")) %>%
+  ggplot(aes(x = half_hour, y = flux)) +
+  geom_point() +
+  ylab(expression(Respiration~(µmol/m^2~s))) +
+  xlab("Day")
+
+#finally the data can be exported as a csv. I recommend doing any final filtering here and export. 
+fitted_models %>% 
+  filter(flux < 100, flux > 0, p.value < 0.005)
+  write.csv(fitted_models, file = "~Plot_One_Flux_Data_June26_July14_2023")
+  
 ```
 
