@@ -1,0 +1,79 @@
+The files I have used here are the .dat files from the OneDrive. Collar heights change every year so please measure height in three places within a collar and use the means in the heights df.
+```{r}
+library(broom)
+library(tidyverse)
+
+raw_data <-  read.csv("C:/Users/alasa/Desktop/HF REU 23/Hemlock1_CO2_data23.dat",header=F)
+chamber <- c("1","2","3","4","5","6","7","8","9","10","11","12") #please keep this as a character
+Average_Height <- c(4.85, 4.9, 5.85, 4.45, 5.75,5.15, 4.8, 4.3, 5.50, 4.3, 3.6, 4)
+heights <- data.frame(chamber, Average_Height)
+```
+
+
+```{r}
+raw_data <- raw_data[-c(1:4),] #the data file is formatted weird so the headers are in the data frame, this gets rid of that and the next line renames coloumn names into something helpful
+raw_data <- rename( raw_data, "datetime" = V1) #rename column names to what they actually are, 
+raw_data <- rename( raw_data,  "chamber" = V3)  #might need to change depending on what your file looks like 
+raw_data <- rename( raw_data,"CO2_ppm" = V4)
+raw_data <- rename( raw_data,"H2O_mmol" = V5)
+raw_data$datetime <- as.POSIXct(raw_data$datetime, format="%Y-%m-%d %H:%M:%S") #correctly formats date-time
+
+#join the average heights data frame with the respiratiom df. Make sure they each have the same column name
+raw_data <- left_join(raw_data, heights, by = "chamber")
+
+
+data <- raw_data %>%    #this rounds the datetime to an hour or half an hour and fixes formatting for chamber column               
+  mutate(half_hour = as.factor(lubridate::floor_date(raw_data$datetime, "30 min")))
+data = data %>%
+  mutate(time_seconds = lubridate::interval(data$datetime[1],
+                                            data$datetime)/lubridate::seconds(1))
+#this function is in case you get an error that says r failed to parse etc etc 
+#this is most likely because of something weird in the first few columns so make sure to double check. 
+#anyways this should tell which lines are problematic.
+parse_ymd_hms = function(x){
+  d=lubridate::ymd_hms(x, quiet=TRUE)
+  errors = x[!is.na(x) & is.na(d)]
+  if(length(errors)>0){
+    cli::cli_warn("Failed to parse some dates: {.val {errors}}")
+  }
+}
+#once the function is loaded can use it, make sure to call the column with datetimes
+dat_fix <- parse_ymd_hms(dat$datetime)
+#get rid of problematic rows 
+data <- data[-c(1:4)]
+
+#now that the format is fixed we can group measurements by chamber and the half hour they were recorded in. 
+fittedmodels <-  data %>% 
+  nest_by(half_hour,chamber) %>%
+  mutate(model = list(lm(CO2_ppm ~ time_seconds, data = data))) %>%
+  reframe(tidy(model)) %>%
+  filter(term=="time_seconds")
+ 
+fitted_models <- fitted_models |> #lid vol+system vol + collar volume in cm3 then converted to L by divinding by 1000 
+mutate("system_vol" = (0.0646328*0.099 + 274.14 + pi*Average_Height*14.3^2 )/1000) |>  
+#estimated slope * system volume/surface area of collar and surface area of lid 
+mutate("flux" = 10000*(estimate *  system_vol/((2*pi*14.3*Average_Height+2*pi*14.3^2)+(2*pi*14.3*9.9+2*pi*14.3^2)))) |> 
+#filter fluxes with high p-values and any weird values
+filter(flux < 100, flux > 0, p.value < 0.005)  
+  
+#make halfhour coloumn a datetime to so ggplot plots correctly 
+fitted_models$half_hour <-  as.POSIXct(fitted_models$half_hour, format="%Y-%m-%d %H:%M:%S") 
+
+#plot fluxes. 
+Unhealthy_Plot_rs_date1_date2 <- ggplot(fitted_models, aes(x= half_hour, y = flux)) +
+  geom_point() +
+  ylab(expression(Respiration~(µmol/m^2~s))) +
+  xlab("Day")
+
+#data can be filtered to remove days where chambers were down or otherwise not working. 
+#Here is an example of how you can plot specific chambers to see when it is/is not working.
+
+chamber_six <- fitted_models %>%
+  filter(chamber == c("6")) %>% 
+  ggplot(aes(x = half_hour, y = flux)) +
+  geom_point() +
+  ylab(expression(Respiration~(µmol/m^2~s))) +
+  xlab("Day")
+
+```
+
