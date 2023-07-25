@@ -113,7 +113,3 @@ fitted_models %>%
   filter(flux < 100, flux > 0, p.value < 0.005) #can filter for standard error as well. 
   write.csv(fitted_models, file = "~Plot_One_Flux_Data_June26_July14_2023")
   
-
-
-```
-</div>
