@@ -1,4 +1,4 @@
-###Kriging Interpolation
+# Kriging Interpolation
 
 Code used to perform a kriging interpolation on respiration data from Hemlock stands in Harvard Forest. 
 
