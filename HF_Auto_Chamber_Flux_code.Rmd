@@ -1,42 +1,66 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+</style>
+.vscroll-plot {
+    width: 1000px;
+    height: 200px;
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
+</style>
+
 
 The files I have used here are the .dat files from the OneDrive. Collar heights change every year so please measure height in three places within a collar and use the means in the heights df.
-
+```{r}
 library(broom)
 library(tidyverse)
 library(ggplot2)
-raw_data <-  read.csv("C:/Users/alasa/Desktop/HF REU 23/Hemlock1_CO2_data23.dat",header=F)
-chamber <- c("1","2","3","4","5","6","7","8","9","10","11","12") #please keep this as a character
-Average_Height <- c(4.85, 4.9, 5.85, 4.45, 5.75,5.15, 4.8, 4.3, 5.50, 4.3, 3.6, 4)
+raw_data <-  read.csv("C:/Users/alasa/Desktop/HF REU 23/TOA5_73817.Hemlock_CO2_data_2023_05_16_1002.dat",
+                      header=F)
+chamber <- c("1","2","3","4","5","6","7","8","9","10","11","12") #please keep 
+                                                            #this as a character
+Average_Height <- c(4.85, 4.9, 5.85, 4.45, 5.75,5.15, 4.8, 4.3, 5.50, 4.3, 3.6, 
+                    4)
 heights <- data.frame(chamber, Average_Height)
+```
 
-
-
-
-raw_data <- raw_data[-c(1:4),] #the data file is formatted weird so the headers are in the data frame, this gets rid of that and the next line renames column names into something helpful. 
-#See below for an example. 
-
+The data file is formatted weird so the headers are part of the rows. See below for an example. 
+```{r}
+raw_data <- raw_data[-c(1:4),]
+```
 ![Example Header Issue]("C:/Users/alasa/Desktop/HF REU 23/header_issue.png")
 
-
-raw_data <- rename( raw_data, "datetime" = V1) #rename column names to what they actually are, 
-raw_data <- rename( raw_data,  "chamber" = V3)  #might need to change depending on what your file looks like
-raw_data <- rename( raw_data,"CO2_ppm" = V4)
+```{r}
+#rename column names to what they actually are
+raw_data <- rename( raw_data, "datetime" = V1)  
+raw_data <- rename( raw_data,  "chamber" = V2)
+raw_data <- rename( raw_data,"CO2_ppm" = V3)
 raw_data <- rename( raw_data,"H2O_mmol" = V5)
-raw_data$datetime <- as.POSIXct(raw_data$datetime, format="%Y-%m-%d %H:%M:%S") #correctly formats date-time
+#correctly formats date-time
+raw_data$datetime <- as.POSIXct(raw_data$datetime, format="%Y-%m-%d %H:%M:%S") 
 
-data <- raw_data %>%    #this rounds the datetime to an hour or half an hour and fixes formatting for chamber column. Doing this means we can sperate each half hour cycle by chamber.     
-  mutate(half_hour = as.factor(lubridate::floor_date(raw_data$datetime, "30 min")))
+#this rounds the datetime to an hour or half an hour and fixes formatting 
+#for chamber column. Doing this means we can separate each cycle by chamber.
+data <- raw_data %>%     
+mutate(half_hour = as.factor(lubridate::floor_date(raw_data$datetime, "30 min")))
 data = data %>%
-  mutate(time_seconds = lubridate::interval(data$datetime[1],data$datetime)/lubridate::seconds(1)) %>%
-  mutate(time_minutes = floor(lubridate::minute(data$datetime)), #this  takes the minutes out of the date                                                                    time and if it ends in a 0,4,5, or 9 it                                                                    is removed from the data set. 
-  min_last = substr(stringr::str_pad(as.character(time_minutes), #measurements at the very beginning and end are when the chamber is opening/closing and make the fluxes very small. 
+  mutate(time_seconds = lubridate::interval(data$datetime[1],data$datetime)
+         /lubridate::seconds(1)) %>%
+  mutate(time_minutes = floor(lubridate::minute(data$datetime)),
+#this  takes the minutes out of the date time and if it ends in a 0,4,5, or 9 it                          is removed from the data set.
+  min_last = substr(stringr::str_pad(as.character(time_minutes), 
+#measurements at the very beginning and end are when the chamber is 
+#opening/closing and make the fluxes very small. 
                                             width=2,pad="0"),2,2)) |>
   filter(min_last != "0", min_last != "4", min_last != "5", min_last != "9")
   
+```
 
-#this function is in case you get an error that says r failed to parse etc etc 
-#this is most likely because of something weird in the first few columns so make sure to double check that you removed the first few rows. 
-#this should tell which lines are problematic.
+This  function is in case you get an error that says r failed to parse etc etc, most likely because of something weird in the first few columns. Make sure to double check that you removed the first few rows. 
+```{r}
 parse_ymd_hms = function(x){
   d=lubridate::ymd_hms(x, quiet=TRUE)
   errors = x[!is.na(x) & is.na(d)]
@@ -44,28 +68,33 @@ parse_ymd_hms = function(x){
     cli::cli_warn("Failed to parse some dates: {.val {errors}}")
   }
 }
-#once the function is loaded can use it, make sure to call the column with datetimes
+#once the function is loaded can use it, make sure to call the $datetimes
 #dat_fix <- parse_ymd_hms(dat$datetime)
 #get rid of problematic rows 
 #data <- data[-c(1:4)]
-
-#now that the format is fixed we can group measurements by chamber and the half hour they were recorded in. Then make a linear model respiration for each 3 minute minute measurement.  
+```
+Now that the format is fixed we can group measurements by chamber, and the half hour they were recorded in. Then make a linear model for respiration for each 3 minute minute measurement.
+```{r}
 fittedmodels <-  data %>% 
   nest_by(half_hour,chamber) %>%
   mutate(model = list(lm(CO2_ppm ~ time_seconds, data = data))) %>%
   reframe(tidy(model)) %>%
   filter(term =="time_seconds")
 
-#join the average heights data frame with the fitted models df. Make sure they each have the same column name
+#join the average heights data frame with the fitted models df. 
 fittedmodels <- left_join(fittedmodels, heights, by = "chamber")
- 
-fitted_models <- fittedmodels |> #lid vol+system vol + collar volume in cm3 then converted to L by divinding by 1000 
-mutate("system_vol_converted_to_mol" = (739*(0.0646328*0.099 + 274.14 + pi*Average_Height*14.3^2 )/1000)/(62.363577*298.15)) |>  
+#lid vol+system vol + collar volume in cm3 then converted to L,divide by 1000 
+fitted_models <- fittedmodels |> 
+mutate("system_vol_converted_to_mol" = (739*(0.0646328*0.099 + 274.14 + 
+                        pi*Average_Height*14.3^2 )/1000)/(62.363577*298.15)) |>  
 #estimated slope * system volume/surface area of collar and converted to m
-mutate("flux" = (estimate *  system_vol_converted_to_mol/((pi*14.3^2)/100^2))) |> 
+mutate("flux" = (estimate *  system_vol_converted_to_mol/((pi*14.3^2)/100^2)))|> 
 #filter fluxes with high p-values and any near 0 values
 filter(flux < 100, flux > 0.01, p.value < 0.005)  
+```
 
+<div class="vscroll-plot">
+```{r}
 #make half_hour coloumn a datetime to so ggplot plots correctly 
 fitted_models$half_hour <-  as.POSIXct(fitted_models$half_hour, format="%Y-%m-%d %H:%M:%S") 
 
@@ -79,14 +108,15 @@ fitted_models$half_hour <-  as.POSIXct(fitted_models$half_hour, format="%Y-%m-%d
 #Here is an example of how you can plot specific chambers to see when it is/is not working.
 
  fitted_models %>%
-  filter(chamber == c("6")) %>% 
+  filter(chamber == c("8")) %>% 
   ggplot(aes(x = half_hour, y = flux)) +
   geom_point() +
   ylab(expression(Respiration~(µmol/m^2~s))) +
   xlab("Day")
 #Here is an example of how you can plot specific days to see daily fluxes.
 fitted_models %>% 
-  filter(half_hour <= "2023-06-26 08:00:00") %>%
+  filter(half_hour <= "2023-07-07 20:00:00") %>%
+  filter(half_hour >= "2023-07-07 08:00:00") %>%
   ggplot(aes(x = half_hour, y = flux)) +
   geom_point() +
   ylab(expression(Respiration~(µmol/m^2~s))) +
@@ -113,3 +143,12 @@ fitted_models %>%
   filter(flux < 100, flux > 0, p.value < 0.005) #can filter for standard error as well. 
   write.csv(fitted_models, file = "~Plot_One_Flux_Data_June26_July14_2023")
   
+  
+  july7 <- fitted_models %>% 
+  filter(half_hour <= "2023-07-07 20:00:00") %>%
+  filter(half_hour >= "2023-07-07 08:00:00") 
+  
+
+
+```
+</div>
