@@ -1,0 +1,83 @@
+#packages for kriging-------------
+library(sp)
+library(remotes)
+library(colorspace)
+library(gstat)
+library(scales)
+library(magrittr)
+library(automap)
+library(tidyverse)
+
+#load in metadata. 
+meta <- read.csv(file="metadata.csv")
+options(digits = 10) #Sometimes coordinates are rounded, this should fix this. 
+
+#You need to cut this dataframe to only include coordinates and your measurements. 
+hkrig <- meta[,c(1,4:8)]
+
+#code for kriging-------------------- 
+
+#interpolation will not work if you have any NA's in your df so we have to remove them before we start.
+ is.na(hkrig)
+ hkrig <- na.omit(hkrig)
+ 
+
+#plot points. If you are working in a small plot GPS coordinates are not very accurate and your map may not look accurate.
+#This is ok but if you can make distances between collars big enough for gps to be accurate that would be ideal 
+
+  hkrig %>% 
+  as.data.frame %>%
+  ggplot(aes(x, y)) + 
+  geom_point(aes(), color="burlywood" , alpha=3/4) + 
+  ggtitle("Respiration") +
+  coord_equal()+
+  theme_bw()
+
+#converts df to a spatial points df. Make sure to check the class, should be a sp spatial df
+coordinates(hkrig) <- ~ x+y
+class(hkrig)
+
+
+#creates a variogram and adds a line of best fit. 
+
+hrsvario <- variogram(log(rs_july7)~1, hkrig)
+#creating a line of best fit is difficult and can be done by hand but using the autofitVariogram command, suggests lines and saves a lot of time.
+#when you run this a new df will be made and within it you will find psill and range that you can input above. You will have to choose the nugget, the y intercept of the varigram. 
+hauto.vario.fit <-  autofitVariogram(log(rs_july7)~1,
+                             hkrig,
+                             model = c("Sph", "Exp", "Log"),
+                             kappa = c(0.05, seq(0.2, 2, 0.1), 5, 10),
+                             fix.values = c(NA, NA, NA),
+                             start_vals = c(NA,NA,NA),
+                             verbose = T)
+hrsfit <- fit.variogram(hrsvario, model=vgm(psill= 0.2920385005,"Exp",range = 3.960468787e-05, nugget = 0.1))
+vario <- plot(hrsvario, hrsfit)
+  
+#Now that a variogram has been made a dataframe of randomly placed points must be made to interpolate between. I chose 4500 sort of arbitrarily but I would not use any less. 
+ hkrig_grid <- spsample(hkrig, n=4500, type = "random")
+
+  hgrid <- hkrig_grid %>% 
+  as.data.frame %>%
+  ggplot(aes(x, y)) + 
+  geom_point(aes(), color="burlywood", alpha=3/4) + 
+  ggtitle("Respiration") +
+  coord_equal() +
+  theme_bw()
+
+#Now we can use the kirge command to interpolate using the model we made above and the points we just made. 
+hget_kriged <- krige(log(rs_july7)~1, hkrig, hkrig_grid, model = hrsfit)
+
+#The output from the krige command will have very small numbers, do not be alarmed. log was used to make the data fit a model better and we can use exp to make the numbers make sense again. 
+hget_kriged@data[["var1.pred"]] <- exp(hget_kriged@data[["var1.pred"]])
+
+#plots heat map. 
+#Points may not show up. Likely because lengths and widths, specified in geom_tile, are not on the same scale as your axes. 
+  hget_kriged %>%
+  as.data.frame %>%
+  ggplot(aes(x=x, y=y)) +
+  geom_tile(aes(fill=var1.pred),width =.000013, height = .000013) +
+  scale_fill_gradient(low = "purple4", high = "salmon1", breaks = c(1,2,3,4,5,6,7,8), limits = c(1, 8), name = "Predicted Respiration") +
+  scale_x_continuous() +
+  scale_y_continuous() +
+  coord_equal() +
+  theme_bw()
