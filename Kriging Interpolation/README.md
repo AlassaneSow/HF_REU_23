@@ -1,6 +1,6 @@
 # Kriging Interpolation
 
-Code used to perform a kriging interpolation on respiration data from Hemlock stands in Harvard Forest. 
+Code used to perform a kriging interpolation on respiration data from Hemlock stands in Harvard Forest. A detailed markdown with images of this code is available in the lab google drive . 
 
 In order to perform a kriging interpolation you need two things:
 -Coordinates where measurements were taken. 
