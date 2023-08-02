@@ -1,4 +1,4 @@
-# HF_REU_23
+# Auto Chamber Flux Pipeline
 THis is code used to get raw data from soil collars in two Harvard Forest hemlock stands. All you need are the .DAT files and measurements for collar heights in cm. 
 You will need to measure collar heights every year and change that in the heights data frame (df).
 .DAT files have an issue in R where column names become parts of the df so please make sure to remove those and rename accordingly. 
