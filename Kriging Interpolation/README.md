@@ -3,7 +3,9 @@
 Code used to perform a kriging interpolation on respiration data from Hemlock stands in Harvard Forest. A detailed markdown with images of this code is available in the lab google drive . 
 
 In order to perform a kriging interpolation you need two things:
+
 -Coordinates where measurements were taken. 
+
 -Data
 
 The least amount of points you can use is 30 and if you are able to I'd recommend using more. Where you take the measurements from is not very important but try to evenly spread them across your plot.
